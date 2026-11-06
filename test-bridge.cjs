@@ -2,13 +2,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const create = vm.runInNewContext(fs.readFileSync(__dirname + '/bridge.js', 'utf8'));
-async function fixture() {
+async function fixture(legacy = false) {
   let now = 100000, interval, scheduled = [], listeners = [], status, fail = false, deferNative;
   const config = { schema: 1, enabled: true, targetMs: 500, leaseUntilMs: 108000 };
   const nativeCalls = [];
   let root = { playing: { onlineResourceId: 'A', resourceTrackId: 'A', resourceName: 'Test A' },
     'async:lyric': { resourceTrackId: 'A', scrollable: true, currentUsedLyric: 'lrc', offset: 0,
       lyricLines: [{ time: 10, lyric: 'first' }] } };
+  if (legacy) delete root["async:lyric"].resourceTrackId;
   const dispatch = action => {
     if (action.type === 'async:lyric/updateOffset') {
       const s = root['async:lyric'], delta = .5 * action.payload.gain;
@@ -108,5 +109,32 @@ async function fixture() {
   assert.equal(await hidden.bridge.pump(), 'aligned', 'app-driven pump must align without any store notification');
   assert.equal(hidden.lyric().offset, -.5);
   hidden.bridge.stop();
-  console.log('PASS: absolute targets, idempotency, disable, lease expiry, native failure/retry, late song, yrc state, pending reload, native reassertion, invalid config, cleanup, frozen-timer event path, app-driven pump.');
+  const legacy = await fixture(true);
+  assert.equal(legacy.lyric().offset, .5, 'legacy current lyrics align');
+  legacy.root.playing.onlineResourceId = 'B'; legacy.root.playing.resourceTrackId = 'B';
+  legacy.configure({ targetMs: 1000 });
+  await legacy.poll();
+  assert.equal(legacy.lyric().offset, .5, 'legacy old lyrics cannot follow a track change');
+  legacy.root['async:lyric'] = { isLoading: false, scrollable: true, currentUsedLyric: 'lrc',
+    offset: 0, lyricLines: [{ time: 20 }] };
+  await legacy.poll();
+  assert.equal(legacy.lyric().offset, 0, 'legacy new state waits for native lyrics');
+  await legacy.native.AudioPlayer.setLyricConfig({ type: 'lyric', data: {} });
+  await legacy.settle();
+  assert.equal(legacy.lyric().offset, 1, 'legacy native lyric completion binds song');
+  assert.equal(legacy.lyric().lyricLines[0].time, 19);
+  await legacy.poll();
+  assert.equal(legacy.lyric().offset, 1, 'legacy idempotency');
+  let finishLegacy;
+  legacy.root.playing.onlineResourceId = 'C'; legacy.root.playing.resourceTrackId = 'C';
+  legacy.root['async:lyric'] = { isLoading: false, scrollable: true, currentUsedLyric: 'lrc',
+    offset: 0, lyricLines: [{ time: 30 }] };
+  legacy.pending(new Promise(resolve => { finishLegacy = resolve; }));
+  const oldLoad = legacy.native.AudioPlayer.setLyricConfig({ type: 'lyric', data: {} });
+  legacy.root.playing.onlineResourceId = 'D'; legacy.root.playing.resourceTrackId = 'D';
+  await legacy.poll();
+  legacy.pending(undefined); finishLegacy(); await oldLoad; await legacy.settle();
+  assert.equal(legacy.lyric().offset, 0, 'legacy late native completion cannot bind to a new song');
+  legacy.bridge.stop();
+  console.log('PASS: absolute targets, idempotency, disable, lease expiry, native failure/retry, late song, yrc state, pending reload, native reassertion, invalid config, cleanup, frozen-timer event path, app-driven pump, legacy song binding and late completion.');
 })().catch(e => { console.error(e); process.exitCode = 1; });

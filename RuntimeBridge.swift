@@ -4,7 +4,7 @@ import Foundation
 final class RuntimeBridge {
     static let port = 19222
     // 必须与 bridge.js 返回的 version 一致：不一致时会停掉旧实例再注入新的。
-    static let bridgeVersion = "2.1.0"
+    static let bridgeVersion = "2.2.0"
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2
@@ -21,6 +21,7 @@ final class RuntimeBridge {
     init(support: URL) {
         connectionURL = support.appendingPathComponent("connection.json")
         let source = (try? String(contentsOf: Bundle.main.resourceURL!.appendingPathComponent("bridge.js"), encoding: .utf8)) ?? ""
+        let resolver = (try? String(contentsOf: Bundle.main.resourceURL!.appendingPathComponent("runtime.js"), encoding: .utf8)) ?? ""
         let paths = ["config": support.appendingPathComponent("config.json").path,
                      "status": support.appendingPathComponent("status.json").path]
         let encoded = String(data: try! JSONSerialization.data(withJSONObject: paths), encoding: .utf8)!
@@ -35,10 +36,7 @@ final class RuntimeBridge {
           if(!window.webpackJsonp)throw new Error('Unsupported player runtime');
           const id=9876543;
           window.webpackJsonp.push([[id],{[id]:(module,exports,require)=>{window.__lyricOffsetRequire=require}},[[id]]]);
-          const require=window.__lyricOffsetRequire,tool=require(8).a,native=require(4);
-          if(!tool.inited||!tool.app||!tool.app._store||!tool.getStore()['async:lyric'])throw new Error('Player initializing');
-          const state=tool.getStore()['async:lyric'];
-          if(typeof state.offset!=='number'||!native.Storage||!native.AudioPlayer||!native.LyricConfigType)throw new Error('Unsupported lyric state');
+          const {tool,native}=(\(resolver))(window.__lyricOffsetRequire);
           if(window.__lyricOffsetBridge)window.__lyricOffsetBridge.stop();
           window.__lyricOffsetBridge=(\(source))(native,tool,\(encoded));
           return 'connected';

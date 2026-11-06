@@ -15,7 +15,7 @@ done
 lipo -create "$APP/Contents/MacOS/Halfbeat.arm64" "$APP/Contents/MacOS/Halfbeat.x86_64" -output "$APP/Contents/MacOS/Halfbeat.new"
 rm -f "$APP/Contents/MacOS/Halfbeat.arm64" "$APP/Contents/MacOS/Halfbeat.x86_64"
 mv -f "$APP/Contents/MacOS/Halfbeat.new" "$APP/Contents/MacOS/Halfbeat"
-cp bridge.js "$APP/Contents/Resources/"
+cp bridge.js runtime.js "$APP/Contents/Resources/"
 cp assets/AppIcon.icns assets/MenuBarIcon.pdf "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,8 +27,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>歌词对齐</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.3.4</string>
-<key>CFBundleVersion</key><string>22</string>
+<key>CFBundleShortVersionString</key><string>1.3.5</string>
+<key>CFBundleVersion</key><string>23</string>
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
