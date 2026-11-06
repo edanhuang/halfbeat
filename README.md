@@ -4,7 +4,8 @@
 
 网易云的歌词总差那么半拍，一首首手动调太麻烦。Halfbeat 是一个 macOS 菜单栏小工具：把歌词自动对齐到你设定的偏移，默认提前 0.5 秒，切歌、重播都会自动生效。
 
-![面板](docs/screenshot.png)
+<img width="628" height="594" alt="image" src="https://github.com/user-attachments/assets/88127951-4b0f-42a5-b603-9e7665b252ef" />
+
 
 ## 功能
 
