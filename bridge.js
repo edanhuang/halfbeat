@@ -15,10 +15,23 @@
   let configReadAt = 0, pumpQueued = false;
   // 退出或崩溃后心跳失效即停止接管，不能仅凭磁盘上残留的 enabled=true 继续调整。
   const active = () => config && config.enabled === true && config.leaseUntilMs > env.now();
+  // 3.1.6 has no lyric.resourceTrackId. Bind loaded lyrics to the current song,
+  // and revoke that binding on every track change/loading cycle. Subsequent songs
+  // become eligible only after their native lyric load completes.
+  let legacySong = "", lastPlayingSong = "", legacyInitialized = false, legacyLoadGeneration = 0;
   function snapshot() {
     const root = tool.getStore(), lyric = root[namespace] || {}, playing = root.playing || {};
-    return { lyric, song: String(lyric.resourceTrackId || ""),
-      playingSong: String(playing.onlineResourceId || playing.resourceTrackId || ""),
+    const playingSong = String(playing.onlineResourceId || playing.resourceTrackId || "");
+    if (!legacyInitialized) {
+      legacyInitialized = true;
+      if (!lyric.isLoading && lyric.scrollable) legacySong = playingSong;
+    } else if (lastPlayingSong !== playingSong || lyric.isLoading) {
+      if (lastPlayingSong !== playingSong) legacyLoadGeneration++;
+      legacySong = "";
+    }
+    lastPlayingSong = playingSong;
+    return { lyric, song: "resourceTrackId" in lyric ? String(lyric.resourceTrackId || "") : legacySong,
+      playingSong,
       name: playing.resourceName || "" };
   }
   function canApply(s) {
@@ -44,7 +57,7 @@
       checks.setLyricConfig = !!(native.AudioPlayer && typeof native.AudioPlayer.setLyricConfig === "function");
       checks.lyricConfigType = !!(native.LyricConfigType && native.LyricConfigType.offset != null
         && native.LyricConfigType.lyric != null);
-      checks.lyricState = !!lyric && typeof lyric.offset === "number" && "resourceTrackId" in lyric
+      checks.lyricState = !!lyric && typeof lyric.offset === "number" && Array.isArray(lyric.lyricLines)
         && "isLoading" in lyric && "scrollable" in lyric;
       checks.playing = !!playing && ("onlineResourceId" in playing || "resourceTrackId" in playing);
     } catch (e) {
@@ -66,7 +79,7 @@
     try {
       const s = snapshot();
       await native.Storage.writeFile({ path: paths.status, isAbsolute: true, alone: true,
-        content: JSON.stringify({ schema: 1, bridgeVersion: "2.1.0", updatedAtMs: env.now(),
+        content: JSON.stringify({ schema: 1, bridgeVersion: "2.2.0", updatedAtMs: env.now(),
           state: statusOf(s), enabled: !!active(), songId: s.song, playingSongId: s.playingSong,
           songName: s.name, currentMs: Number.isFinite(s.lyric.offset) ? Math.round(s.lyric.offset * 1000) : null,
           targetMs: config ? config.targetMs : null, changes, lastAppliedAtMs: lastAppliedAt, error: configError || error,
@@ -133,12 +146,19 @@
     if (type !== native.LyricConfigType.lyric && type !== native.LyricConfigType.offset)
       return originalSet.apply(this, args);
     // 网易云自己的歌词加载或手动微调可能覆盖原生偏移；等待其完成后重新对齐，不打断原调用。
+    const loading = snapshot();
     nativeGeneration++; pendingNative++; nativeDirty = true;
+    const loadGeneration = type === native.LyricConfigType.lyric ? ++legacyLoadGeneration : legacyLoadGeneration;
     let result;
     try { result = originalSet.apply(this, args); }
     catch (e) { pendingNative--; nativeDirty = true; schedule(); throw e; }
     // 保持原方法接收者、返回值和异常语义，避免影响网易云后续歌词流程。
     Promise.resolve(result).then(() => {
+      const current = snapshot();
+      if (type === native.LyricConfigType.lyric && !("resourceTrackId" in current.lyric)
+        && loadGeneration === legacyLoadGeneration && current.playingSong === loading.playingSong
+        && current.lyric.lyricLines === loading.lyric.lyricLines && !current.lyric.isLoading)
+        legacySong = current.playingSong;
       pendingNative--; nativeDirty = true; schedule();
     }, () => { pendingNative--; nativeDirty = true; schedule(); });
     return result;
@@ -154,7 +174,7 @@
   try { unsubscribe = tool.app._store.subscribe(schedule); native.AudioPlayer.setLyricConfig = observedSet; }
   catch (e) { env.clearInterval(interval); if (unsubscribe) unsubscribe(); throw e; }
   poll();
-  return { version: "2.1.0",
+  return { version: "2.2.0",
     // 由菜单栏经本机调试通道驱动：页面计时器被浏览器冻结时，仍由 App 的心跳拉起一次检查。
     async pump() {
       if (disposed) return "disposed";

@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let probe = status["probe"] as? [String: Any]
         let bridgeError = bridge.error ?? ""
         let injectionUnsupported = ["Unsupported player runtime", "Unsupported lyric state",
-                                    "Player initializing", "找不到受支持的网易云播放器页面"]
+                                    "找不到受支持的网易云播放器页面"]
             .contains { bridgeError.contains($0) }
         let incompatible = (probe?["verdict"] as? String) == "incompatible" || injectionUnsupported
 
@@ -131,6 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             level = .waiting; hint = "正在重新连接网易云…"
         } else if !running {
             level = .off; hint = "网易云音乐未运行"
+        } else if bridgeError.contains("Player initializing") {
+            level = .waiting; hint = "等待网易云播放器初始化"
         } else if !fresh {
             level = bridge.connected ? .waiting : .off
             hint = bridge.connected ? "等待歌词状态" : "等待连接"
