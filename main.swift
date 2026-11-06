@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let successToast = SuccessToast()
     private var toastEvents = LyricToastEventGate(startedAtMs: Date().timeIntervalSince1970 * 1000)
     private var toastTimer: Timer?
+    private var lastToastCheckAtMs: Double = 0
+    private var latencyEvents: [[String: Any]] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -214,6 +216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkToastEvent() {
+        let checkedAtMs = Date().timeIntervalSince1970 * 1000
+        let checkGapMs = lastToastCheckAtMs > 0 ? checkedAtMs - lastToastCheckAtMs : 0
+        lastToastCheckAtMs = checkedAtMs
         // 关掉“对齐时弹窗”后只是不打扰，不影响歌词对齐；事件本身仍按时间与去重规则过滤。
         guard config.toastOnAlign,
               let data = try? Data(contentsOf: support.appendingPathComponent("status.json"), options: .uncached),
@@ -221,6 +226,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let event = toastEvents.consume(status, enabled: config.enabled, targetMs: config.targetMs,
                                              nowMs: Date().timeIntervalSince1970 * 1000) else { return }
         successToast.show(event, on: item.button?.window?.screen)
+        // Only record actual success presentations. Keep a bounded local history for
+        // separating player lyric load, bridge alignment and App timer delays.
+        let presentedAtMs = Date().timeIntervalSince1970 * 1000
+        let record: [String: Any] = ["presentedAtMs": presentedAtMs,
+                                    "appliedToToastMs": presentedAtMs - event.appliedAtMs,
+                                    "toastCheckGapMs": checkGapMs,
+                                    "bridge": status["timing"] as? [String: Any] ?? [:]]
+        latencyEvents.append(record)
+        if latencyEvents.count > 40 { latencyEvents.removeFirst(latencyEvents.count - 40) }
+        if let data = try? JSONSerialization.data(withJSONObject: latencyEvents) {
+            try? data.write(to: support.appendingPathComponent("latency.json"), options: .atomic)
+        }
     }
 
     // 诊断信息打成一段 JSON 放进剪贴板，方便用户直接贴出来排查。
@@ -231,7 +248,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "config": ["enabled": config.enabled, "targetMs": config.targetMs, "toastOnAlign": config.toastOnAlign],
             "connection": ["connected": bridge.connected, "state": connection,
                            "error": bridge.error ?? "", "appError": lastError ?? ""],
-            "status": cachedStatus
+            "status": cachedStatus,
+            "recentLatency": latencyEvents
         ]
         let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])) ?? Data()
         let text = String(data: data, encoding: .utf8) ?? "{}"

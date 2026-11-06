@@ -48,6 +48,10 @@ async function fixture(legacy = false) {
   const h = await fixture();
   assert.equal(h.lyric().offset, .5); assert.equal(h.lyric().lyricLines[0].time, 9.5);
   assert.equal(h.status().state, 'aligned');
+  assert.equal(h.status().timing.songId, 'A');
+  assert.equal(h.status().timing.songChangedAtMs, 100000);
+  assert.equal(h.status().timing.lyricReadyAtMs, 100000);
+  assert.equal(h.status().timing.alignedAtMs, h.status().lastAppliedAtMs);
   await h.poll(); await h.flush(); assert.equal(h.nativeCalls.length, 1, 'idempotency');
   h.configure({ targetMs: -500 }); await h.poll();
   assert.equal(h.lyric().offset, -.5); assert.equal(h.lyric().lyricLines[0].time, 10.5);
@@ -115,6 +119,9 @@ async function fixture(legacy = false) {
   legacy.configure({ targetMs: 1000 });
   await legacy.poll();
   assert.equal(legacy.lyric().offset, .5, 'legacy old lyrics cannot follow a track change');
+  assert.equal(legacy.status().timing.songId, 'B');
+  assert.equal(legacy.status().timing.lyricReadyAtMs, 0, 'new song timing cannot retain old lyric readiness');
+  assert.equal(legacy.status().timing.alignedAtMs, 0, 'new song timing cannot retain old alignment');
   legacy.root['async:lyric'] = { isLoading: false, scrollable: true, currentUsedLyric: 'lrc',
     offset: 0, lyricLines: [{ time: 20 }] };
   await legacy.poll();

@@ -4,7 +4,7 @@ import Foundation
 final class RuntimeBridge {
     static let port = 19222
     // 必须与 bridge.js 返回的 version 一致：不一致时会停掉旧实例再注入新的。
-    static let bridgeVersion = "2.2.0"
+    static let bridgeVersion = "2.2.1"
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2
