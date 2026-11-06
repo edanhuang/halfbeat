@@ -1,0 +1,8 @@
+.DS_Store
+dist/
+.learnings/
+# 由 tools/make_icons.swift 生成的图标资源，构建时会重新生成
+assets/AppIcon.iconset/
+assets/AppIcon.icns
+assets/AppIcon.png
+assets/MenuBarIcon.pdf
