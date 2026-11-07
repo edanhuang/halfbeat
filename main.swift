@@ -31,9 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastError: String?
     var connection = "waiting"
     lazy var bridge = RuntimeBridge(support: support)
-    var attemptedPIDs = Set<pid_t>()
-    var missingConnectionTicks = 0
     var cachedStatus: [String: Any] = [:]
+    private var recovery = ConnectionRecovery()
+    private var launchModePID: pid_t?
+    private var launchHasDebugPort: Bool?
     private let panel = StatusPanel()
     private let successToast = SuccessToast()
     private var toastEvents = LyricToastEventGate(startedAtMs: Date().timeIntervalSince1970 * 1000)
@@ -137,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             level = .waiting; hint = "等待网易云播放器初始化"
         } else if !fresh {
             level = bridge.connected ? .waiting : .off
-            hint = bridge.connected ? "等待歌词状态" : "等待连接"
+            hint = bridge.connected ? "等待歌词状态" : "未连接"
         } else if !config.enabled {
             level = .off; hint = "自动对齐已关闭"
         } else {
@@ -157,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !running { songText = "网易云音乐未运行" }
         else if let error = lastError { songText = error }
         else if level == .error { songText = hint }
+        else if config.enabled && !bridge.debugEndpointAvailable { songText = "未连接" }
         else { songText = fresh && !song.isEmpty ? song : "—" }
 
         item.button?.title = ""
@@ -165,7 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.update(StatusPanel.State(songName: songText, offsetMs: config.targetMs, enabled: config.enabled,
                                        showsToast: config.toastOnAlign,
                                        launchesAtLogin: SMAppService.mainApp.status == .enabled,
-                                       incompatible: incompatible, hint: hint, level: level))
+                                       incompatible: incompatible, hint: hint, level: level,
+                                       musicActionTitle: running && config.enabled && !bridge.debugEndpointAvailable ? "连接网易云…" : "打开网易云"))
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -210,6 +213,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openMusic() {
         panel.hide()
+        // 普通进程不能补加启动参数；用户点击连接时直接重启接入。
+        // 后台只对确认缺少启动参数的普通进程自动接入。
+        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music").isEmpty
+        if running && config.enabled && !bridge.debugEndpointAvailable {
+            restartMusic(debug: true)
+            return
+        }
         let launch = NSWorkspace.OpenConfiguration()
         if config.enabled { launch.arguments = ["--remote-debugging-port=\(RuntimeBridge.port)", "--remote-debugging-address=127.0.0.1"] }
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/NeteaseMusic.app"), configuration: launch)
@@ -246,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "app": ["version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
                     "bridge": RuntimeBridge.bridgeVersion],
             "config": ["enabled": config.enabled, "targetMs": config.targetMs, "toastOnAlign": config.toastOnAlign],
-            "connection": ["connected": bridge.connected, "state": connection,
+            "connection": ["connected": bridge.connected, "debugEndpointAvailable": bridge.debugEndpointAvailable, "state": connection,
                            "error": bridge.error ?? "", "appError": lastError ?? ""],
             "status": cachedStatus,
             "recentLatency": latencyEvents
@@ -260,26 +270,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         successToast.show(message: "已复制诊断结果", on: item.button?.window?.screen)
     }
 
-    func autoConnect() {
+    private func autoConnect() {
         guard config.enabled, !maintenance,
-              let player = NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music").first else {
-            missingConnectionTicks = 0; return
+              let player = NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music").first,
+              player.isFinishedLaunching else {
+            recovery.resetPending()
+            return
         }
-        if bridge.connected { missingConnectionTicks = 0; return }
-        missingConnectionTicks += 1
-        // 普通入口启动的播放器可能没有本机调试接口；先等待初始化，每个进程至多重启一次，避免重连循环反复中断播放。
-        if missingConnectionTicks >= 5 && !attemptedPIDs.contains(player.processIdentifier) {
-            attemptedPIDs.insert(player.processIdentifier); missingConnectionTicks = 0
+        let pid = player.processIdentifier
+        if launchModePID != pid {
+            launchModePID = pid
+            launchHasDebugPort = nil
+        }
+        if launchHasDebugPort == nil {
+            // 只读本机进程参数，不以桥接注入失败或歌词状态作为重启依据。
+            launchHasDebugPort = PlayerLaunchMode.hasDebugPort(pid: pid, port: RuntimeBridge.port)
+        }
+        if recovery.shouldRestart(pid: pid, hasDebugPort: launchHasDebugPort,
+                                  endpointAvailable: bridge.debugEndpointAvailable,
+                                  now: ProcessInfo.processInfo.systemUptime) {
             restartMusic(debug: true)
         }
     }
 
-    func restartMusic(debug: Bool) {
+    private func restartMusic(debug: Bool) {
         // 连接模式切换必须重启播放器才能应用启动参数；只请求正常退出，超时不强杀，避免丢失播放器自身状态。
         guard !maintenance else { return }
         maintenance = true; refresh()
         let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music")
-        applications.forEach { _ = $0.terminate() }
+        applications.forEach {
+            recovery.markAttempted(pid: $0.processIdentifier)
+            _ = $0.terminate()
+        }
         let deadline = Date().addingTimeInterval(12)
         func waitForExit() {
             if !NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music").isEmpty {
@@ -292,9 +314,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/NeteaseMusic.app"), configuration: launch) { app, error in
                 DispatchQueue.main.async {
                     self.maintenance = false
-                    if let app = app { self.attemptedPIDs.insert(app.processIdentifier) }
+                    if let app = app { self.recovery.markAttempted(pid: app.processIdentifier) }
                     self.lastError = error?.localizedDescription
-                    self.missingConnectionTicks = 0; self.refresh()
+                    self.refresh()
                 }
             }
         }

@@ -7,7 +7,7 @@ xcrun swift tools/make_icons.swift "$PWD/assets"
 iconutil -c icns "$PWD/assets/AppIcon.iconset" -o "$PWD/assets/AppIcon.icns"
 # 先产出到临时文件再替换：dist 里的应用可能正在运行，直接写运行中的可执行文件会报 Text file busy。
 # 同时编 arm64 与 x86_64，合并成通用二进制：Intel 与 Apple Silicon 都能直接跑。
-SOURCES=(main.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
+SOURCES=(main.swift ConnectionRecovery.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
 FRAMEWORKS=(-framework AppKit -framework ServiceManagement -framework QuartzCore)
 for arch in arm64 x86_64; do
   xcrun swiftc "${SOURCES[@]}" -O -target "$arch-apple-macosx13.0" -o "$APP/Contents/MacOS/Halfbeat.$arch" "${FRAMEWORKS[@]}"
@@ -27,12 +27,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>歌词对齐</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.3.5</string>
-<key>CFBundleVersion</key><string>23</string>
+<key>CFBundleShortVersionString</key><string>1.3.9</string>
+<key>CFBundleVersion</key><string>27</string>
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+xattr -cr "$APP"
 codesign --force --sign - "$APP"
 echo "$APP"
