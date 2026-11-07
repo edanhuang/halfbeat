@@ -13,6 +13,7 @@ final class StatusPanel: NSObject {
         var incompatible: Bool
         var hint: String
         var level: Level
+        var musicActionTitle = "打开网易云"
     }
 
     var onToggleEnabled: ((Bool) -> Void)?
@@ -339,6 +340,10 @@ final class StatusPanelRow: NSView {
     var onClick: (() -> Void)?
     private let highlight = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
+    var title: String {
+        get { titleLabel.stringValue }
+        set { titleLabel.stringValue = newValue }
+    }
     private let iconView = NSImageView()
     private var accessoryView: NSView?
     private var hovered = false
@@ -560,6 +565,7 @@ final class StatusPanelContent: NSViewController {
     func apply(_ state: StatusPanel.State) {
         // 面板可能还没显示过，先确保视图已构建。
         _ = view
+        openRow.title = state.musicActionTitle
         offsetMs = state.offsetMs
         songLabel.stringValue = state.songName
         songLabel.toolTip = state.songName

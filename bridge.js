@@ -18,10 +18,14 @@
   // 3.1.6 has no lyric.resourceTrackId. Bind loaded lyrics to the current song,
   // and revoke that binding on every track change/loading cycle. Subsequent songs
   // become eligible only after their native lyric load completes.
+  let timing = { songId: "", songChangedAtMs: 0, lyricReadyAtMs: 0, alignedAtMs: 0 };
   let legacySong = "", lastPlayingSong = "", legacyInitialized = false, legacyLoadGeneration = 0;
   function snapshot() {
     const root = tool.getStore(), lyric = root[namespace] || {}, playing = root.playing || {};
     const playingSong = String(playing.onlineResourceId || playing.resourceTrackId || "");
+    if (timing.songId !== playingSong) {
+      timing = { songId: playingSong, songChangedAtMs: env.now(), lyricReadyAtMs: 0, alignedAtMs: 0 };
+    }
     if (!legacyInitialized) {
       legacyInitialized = true;
       if (!lyric.isLoading && lyric.scrollable) legacySong = playingSong;
@@ -30,7 +34,10 @@
       legacySong = "";
     }
     lastPlayingSong = playingSong;
-    return { lyric, song: "resourceTrackId" in lyric ? String(lyric.resourceTrackId || "") : legacySong,
+    const song = "resourceTrackId" in lyric ? String(lyric.resourceTrackId || "") : legacySong;
+    if (!timing.lyricReadyAtMs && song && song === playingSong && !lyric.isLoading
+      && lyric.scrollable && lyric.currentUsedLyric !== "none") timing.lyricReadyAtMs = env.now();
+    return { lyric, song,
       playingSong,
       name: playing.resourceName || "" };
   }
@@ -79,11 +86,11 @@
     try {
       const s = snapshot();
       await native.Storage.writeFile({ path: paths.status, isAbsolute: true, alone: true,
-        content: JSON.stringify({ schema: 1, bridgeVersion: "2.2.0", updatedAtMs: env.now(),
+        content: JSON.stringify({ schema: 1, bridgeVersion: "2.2.1", updatedAtMs: env.now(),
           state: statusOf(s), enabled: !!active(), songId: s.song, playingSongId: s.playingSong,
           songName: s.name, currentMs: Number.isFinite(s.lyric.offset) ? Math.round(s.lyric.offset * 1000) : null,
           targetMs: config ? config.targetMs : null, changes, lastAppliedAtMs: lastAppliedAt, error: configError || error,
-          probe: probe() }) });
+          probe: probe(), timing: Object.assign({}, timing) }) });
     } catch (_) { /* Playback must not depend on status reporting. */ }
   }
   function acceptConfig(parsed) {
@@ -133,6 +140,7 @@
         const gain = (target / 1000 - s.lyric.offset) / .5;
         if (Math.abs(gain) > .000001) tool.getDispatch()({ type: namespace + "/updateOffset", payload: { gain } });
         nativeDirty = false; changes++; lastAppliedAt = env.now(); error = "";
+        timing.alignedAtMs = lastAppliedAt;
         failures = 0; retryAfter = 0;
       } else { nativeDirty = true; schedule(); }
     } catch (e) {
@@ -174,7 +182,7 @@
   try { unsubscribe = tool.app._store.subscribe(schedule); native.AudioPlayer.setLyricConfig = observedSet; }
   catch (e) { env.clearInterval(interval); if (unsubscribe) unsubscribe(); throw e; }
   poll();
-  return { version: "2.2.0",
+  return { version: "2.2.1",
     // 由菜单栏经本机调试通道驱动：页面计时器被浏览器冻结时，仍由 App 的心跳拉起一次检查。
     async pump() {
       if (disposed) return "disposed";

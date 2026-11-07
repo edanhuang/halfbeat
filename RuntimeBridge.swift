@@ -4,7 +4,7 @@ import Foundation
 final class RuntimeBridge {
     static let port = 19222
     // 必须与 bridge.js 返回的 version 一致：不一致时会停掉旧实例再注入新的。
-    static let bridgeVersion = "2.2.0"
+    static let bridgeVersion = "2.2.1"
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2
@@ -15,6 +15,8 @@ final class RuntimeBridge {
     private var checking = false
     private let expression: String
     private let connectionURL: URL
+    // 调试接口可访问与运行时适配成功是两种状态，不能把初始化等待误判为需要重启。
+    private(set) var debugEndpointAvailable = false
     var connected = false
     var error: String?
 
@@ -54,7 +56,19 @@ final class RuntimeBridge {
             }
             do {
                 let url = URL(string: "http://127.0.0.1:\(Self.port)/json/list")!
-                let (data, _) = try await session.data(from: url)
+                let data: Data
+                do {
+                    let (responseData, response) = try await session.data(from: url)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200,
+                          (try? JSONSerialization.jsonObject(with: responseData)) is [[String: Any]] else {
+                        throw URLError(.badServerResponse)
+                    }
+                    data = responseData
+                    debugEndpointAvailable = true
+                } catch {
+                    debugEndpointAvailable = false
+                    throw error
+                }
                 // 只向网易云主播放器页面注入，且拒绝目标列表提供的非本机 WebSocket 地址。
                 guard let pages = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                       let page = pages.first(where: { ($0["url"] as? String) == "orpheus://orpheus/app.html" }),
