@@ -1,13 +1,14 @@
 #!/bin/zsh
 set -eu
 cd "${0:A:h}"
-APP="$PWD/dist/歌词对齐.app"
+# 文件系统名称与默认 DisplayName 必须一致，否则 Finder 会跳过 InfoPlist.strings 的本地化显示名。
+APP="$PWD/dist/Halfbeat.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 xcrun swift tools/make_icons.swift "$PWD/assets"
 iconutil -c icns "$PWD/assets/AppIcon.iconset" -o "$PWD/assets/AppIcon.icns"
 # 先产出到临时文件再替换：dist 里的应用可能正在运行，直接写运行中的可执行文件会报 Text file busy。
 # 同时编 arm64 与 x86_64，合并成通用二进制：Intel 与 Apple Silicon 都能直接跑。
-SOURCES=(main.swift ConnectionRecovery.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
+SOURCES=(main.swift AppIdentity.swift ConnectionRecovery.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
 FRAMEWORKS=(-framework AppKit -framework ServiceManagement -framework QuartzCore)
 for arch in arm64 x86_64; do
   xcrun swiftc "${SOURCES[@]}" -O -target "$arch-apple-macosx13.0" -o "$APP/Contents/MacOS/Halfbeat.$arch" "${FRAMEWORKS[@]}"
@@ -17,6 +18,7 @@ rm -f "$APP/Contents/MacOS/Halfbeat.arm64" "$APP/Contents/MacOS/Halfbeat.x86_64"
 mv -f "$APP/Contents/MacOS/Halfbeat.new" "$APP/Contents/MacOS/Halfbeat"
 cp bridge.js runtime.js "$APP/Contents/Resources/"
 cp assets/AppIcon.icns assets/MenuBarIcon.pdf "$APP/Contents/Resources/"
+cp -R Resources/en.lproj Resources/zh-Hans.lproj "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -24,11 +26,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Halfbeat</string>
 <key>CFBundleIdentifier</key><string>local.lyricoffset.menubar</string>
 <key>CFBundleName</key><string>Halfbeat</string>
-<key>CFBundleDisplayName</key><string>歌词对齐</string>
+<key>CFBundleDisplayName</key><string>Halfbeat</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.3.9</string>
-<key>CFBundleVersion</key><string>27</string>
+<key>CFBundleShortVersionString</key><string>1.3.10</string>
+<key>CFBundleVersion</key><string>28</string>
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>

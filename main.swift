@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuIcon.isTemplate = true
         item.button?.image = menuIcon
         item.button?.imagePosition = .imageOnly
-        item.button?.setAccessibilityLabel("歌词对齐")
+        item.button?.setAccessibilityLabel(AppIdentity.displayName)
         item.button?.target = self
         item.button?.action = #selector(togglePanel)
 
@@ -325,7 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func show(_ message: String) {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert(); alert.messageText = "歌词对齐"; alert.informativeText = message
+        let alert = NSAlert(); alert.messageText = AppIdentity.displayName; alert.informativeText = message
         alert.addButton(withTitle: "好"); alert.runModal()
     }
 

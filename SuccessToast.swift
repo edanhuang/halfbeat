@@ -364,7 +364,7 @@ final class SuccessToast {
     private func beginActivity() {
         guard activity == nil else { return }
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
-                                                         reason: "显示歌词对齐成功浮层")
+                                                         reason: "\(AppIdentity.displayName)：显示对齐成功浮层")
     }
 
     private func endActivity() {

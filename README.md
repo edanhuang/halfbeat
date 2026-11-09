@@ -17,7 +17,7 @@
 
 ## 使用
 
-1. 把 `歌词对齐.app` 拖进 `/Applications`；
+1. 把 `Halfbeat.app` 拖进 `/Applications`；显示名称随系统首选语言变化：English 为 **Halfbeat**，简体中文为 **歌词对齐**。从旧版升级时，先退出并移除原来的 `歌词对齐.app`，再放入新版，避免保留两份相同应用；
 2. 首次打开被系统拦下时，右键 → 打开；
 3. 点菜单栏图标打开面板。普通方式重开网易云时，工具会检查启动参数；确认未开启连接接口后，等待约 4–6 秒自动重启一次并接入，无需确认。已带接口启动的进程只重试连接，不会因切歌、歌词加载或短暂失联反复重启。也可以从本工具点“打开网易云”，启动时即开启接口。
 
@@ -26,10 +26,13 @@
 ## 构建
 
 ```sh
-zsh build.sh          # 需要 Xcode Command Line Tools，产物在 dist/歌词对齐.app
+zsh build.sh          # 需要 Xcode Command Line Tools，产物在 dist/Halfbeat.app
 node test-bridge.cjs  # 行为回归测试，需要 Node.js
+zsh tools/test_bundle_names.sh  # 构建后验证英文、简体中文与未支持语言的英文回退
 node test-runtime.cjs # 模块发现兼容性测试
 ```
+
+App 名称使用 `Resources/en.lproj/InfoPlist.strings` 与 `Resources/zh-Hans.lproj/InfoPlist.strings` 本地化，默认语言为英文；其他界面文案仍为中文。
 
 ## 兼容说明
 
