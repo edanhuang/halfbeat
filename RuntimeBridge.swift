@@ -12,6 +12,7 @@ final class RuntimeBridge {
         configuration.connectionProxyDictionary = [:]
         return URLSession(configuration: configuration)
     }()
+    private let channel = DevToolsChannel()
     private var checking = false
     private let expression: String
     private let connectionURL: URL
@@ -66,7 +67,9 @@ final class RuntimeBridge {
                     data = responseData
                     debugEndpointAvailable = true
                 } catch {
+                    // 播放器已退出：释放连接，等接口恢复后再建。
                     debugEndpointAvailable = false
+                    channel.close()
                     throw error
                 }
                 // 只向网易云主播放器页面注入，且拒绝目标列表提供的非本机 WebSocket 地址。
@@ -75,38 +78,12 @@ final class RuntimeBridge {
                       let address = page["webSocketDebuggerUrl"] as? String,
                       let socketURL = URL(string: address), socketURL.scheme == "ws",
                       socketURL.host == "127.0.0.1", socketURL.port == Self.port else {
+                    channel.close()
                     throw NSError(domain: "Halfbeat", code: 1, userInfo: [NSLocalizedDescriptionKey: "找不到受支持的网易云播放器页面"])
                 }
-                let socket = session.webSocketTask(with: socketURL)
-                socket.resume()
-                defer { socket.cancel(with: .goingAway, reason: nil) }
-                let request: [String: Any] = ["id": 1, "method": "Runtime.evaluate", "params": ["expression": expression, "returnByValue": true]]
-                let message = String(data: try JSONSerialization.data(withJSONObject: request), encoding: .utf8)!
-                try await socket.send(.string(message))
-                let response: String = try await withThrowingTaskGroup(of: String.self) { group in
-                    group.addTask {
-                        while true {
-                            let message = try await socket.receive()
-                            let text: String
-                            switch message {
-                            case .string(let value): text = value
-                            case .data(let value): text = String(data: value, encoding: .utf8) ?? ""
-                            @unknown default: continue
-                            }
-                            if let raw = text.data(using: .utf8),
-                               let body = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-                               body["id"] as? Int == 1 { return text }
-                        }
-                    }
-                    group.addTask {
-                        try await Task.sleep(nanoseconds: 3_000_000_000)
-                        // 必须主动取消挂起的接收，否则一次无响应连接会占住 checking，导致后续重连永久停滞。
-                        socket.cancel(with: .goingAway, reason: nil)
-                        throw URLError(.timedOut)
-                    }
-                    defer { group.cancelAll() }
-                    return try await group.next()!
-                }
+                // 复用长连接；页面重载导致调试地址变化或连接出错时，channel 会自动重建。
+                // 适配结果不对（如不支持的播放器版本）时保留连接，避免每次心跳重连再次累积内存。
+                let response = try await channel.evaluate(expression, at: socketURL)
                 guard let raw = response.data(using: .utf8),
                       let body = try JSONSerialization.jsonObject(with: raw) as? [String: Any],
                       let result = body["result"] as? [String: Any], result["exceptionDetails"] == nil,

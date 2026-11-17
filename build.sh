@@ -8,7 +8,7 @@ xcrun swift tools/make_icons.swift "$PWD/assets"
 iconutil -c icns "$PWD/assets/AppIcon.iconset" -o "$PWD/assets/AppIcon.icns"
 # 先产出到临时文件再替换：dist 里的应用可能正在运行，直接写运行中的可执行文件会报 Text file busy。
 # 同时编 arm64 与 x86_64，合并成通用二进制：Intel 与 Apple Silicon 都能直接跑。
-SOURCES=(main.swift AppIdentity.swift ConnectionRecovery.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
+SOURCES=(main.swift AppIdentity.swift ConnectionRecovery.swift DevToolsChannel.swift RuntimeBridge.swift LyricToastEvent.swift SuccessToast.swift StatusPanel.swift)
 FRAMEWORKS=(-framework AppKit -framework ServiceManagement -framework QuartzCore)
 for arch in arm64 x86_64; do
   xcrun swiftc "${SOURCES[@]}" -O -target "$arch-apple-macosx13.0" -o "$APP/Contents/MacOS/Halfbeat.$arch" "${FRAMEWORKS[@]}"
